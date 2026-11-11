@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildSnowWorld } from './snow.js';
+import { buildMountainWorld } from './mountain.js';
 import { buildAngkasaWorld } from './angkasa.js';
 import { buildLavaMap, updateLavaMap } from './lava.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -360,39 +361,8 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('btn-start-game').addEventListener('click', () => {
-    // Di room, tombol ini hanya meminta host memulai. Semua pemain baru mulai
-    // setelah startAt tersinkron dari Firebase.
-    if (roomCode && !roomStartAt) {
-      if (roomMeta && roomMeta.host === mpUid) hostStart().catch(e => showToast(mpErr(e)));
-      else showToast('Menunggu pembuat room memulai permainan.');
-      return;
-    }
-    if (gachaBusy || loadingActive) return;
-    requestFullscreenAndLock();
-    document.getElementById('btn-start-game').style.display = 'none';
-    document.getElementById('btn-shop').style.display = 'none';
-    document.getElementById('btn-vault').style.display = 'none';
-    setElDisplay('btn-music', 'none');
-    document.getElementById('in-game-controls').style.display = 'block'; setLobbyOnlyHud(false);
-    chatBox.style.display = 'none'; 
-    chatToggle.textContent = '💬 Chat Global';
-    profileModal.style.display = 'none';
-    shopModal.style.display = 'none';
-    // GACHA MAP: room memakai hasil gacha host (tersimpan di meta.map) agar semua pemain satu map.
-    const roomMap = roomMeta && roomMeta.map;
-    const pickedMap = (roomCode && roomStartAt) ? ((roomMap === 'snow' && snowWorld) ? 'snow' : (roomMap === 'angkasa' && angkasaWorld) ? 'angkasa' : 'lava') : rollMap();
-    gachaBusy = true;
-    playMapGacha(pickedMap, roomCode ? 900 : 1500, () => {
-      gachaBusy = false;
-      showLoadingScreen(() => {
-        applyMap(pickedMap);
-        isGameStarted = true;
-        onGameBegin();
-        setElDisplay('btn-exit-lobby', 'flex');
-        camera.position.set(0, 4, 8);
-        controls.target.set(0, 1.5, 0);
-      });
-    });
+    showToast('Lagi update bolo', 3000);
+    return;
   });
 
   // --- PROSES REGISTRASI & LOGIN ---
@@ -1095,7 +1065,7 @@ let batGrp, capeB, ironHelm, ironBody, thorHelm, thorBody, capeT;
 let MAZE_H = 12, MAZE_Z = -101;
 let zoomDir = 0, guards = [], mazeHinted = false, WIN = { x: 0, y: 0, z: -77 };
 // Sistem multi-map (gacha): map aktif + dunia tiap map. Lihat blok SNOW-MODULE.
-let currentMap = 'lava', lavaWorld = null, snowWorld = null, snowWorldGroup = null, snowController = null, angkasaWorld = null, angkasaWorldGroup = null, angkasaController = null, curGroundPlat = null, gachaBusy = false;
+let currentMap = 'lava', lavaWorld = null, snowWorld = null, snowWorldGroup = null, snowController = null, mountainWorld = null, mountainWorldGroup = null, angkasaWorld = null, angkasaWorldGroup = null, angkasaController = null, curGroundPlat = null, gachaBusy = false;
 const ROASTS = {
   hit: ['Wah, pemain PALING BERUNTUNG hari ini... beruntung kena bola berduri 🍀😹', 'Beruntung banget ya, dilempar sejauh itu. Gratis lho 🚀😹', 'Selamat! Kamu terpilih jadi korban palang berputar 🏆💀', 'Keberuntungan kamu emang nggak ada obat, ketabrak mulu 🍀🤣'],
   fall: ['Beruntung banget jatuh ke lava, hangat kan? 🔥😹', 'Pemain paling beruntung sedunia: jatuh dari tempat yang sama lagi 🍀💀', 'Mantap, rekor jatuh terbaru! Lava bangga sama kamu 🏅🔥'],
@@ -1661,6 +1631,7 @@ function init3DGame() {
   lavaWorld = { platforms, hazards, guards, laserBeam, FIN_Y, WIN, MAZE_H, MAZE_Z };
   try { const builtSnow = buildSnowWorld(THREE, scene, { runElapsedMs, insidePlat, showToast }); snowWorld = builtSnow.world; snowWorldGroup = builtSnow.group; snowController = builtSnow.controller; } catch (e) { console.error('Map Salju gagal dibuat, hanya Lava yang aktif:', e); snowWorld = null; snowController = null; if (snowWorldGroup) { scene.remove(snowWorldGroup); snowWorldGroup = null; } }
   try { const builtAngkasa = buildAngkasaWorld(THREE, scene, { showToast }); angkasaWorld = builtAngkasa.world; angkasaWorldGroup = builtAngkasa.group; angkasaController = builtAngkasa.controller; } catch (e) { console.error('Map Angkasa gagal dibuat:', e); angkasaWorld = null; angkasaController = null; if (angkasaWorldGroup) { scene.remove(angkasaWorldGroup); angkasaWorldGroup = null; } }
+  try { const builtMountain = buildMountainWorld(THREE, scene, { showToast }); mountainWorld = builtMountain.world; mountainWorldGroup = builtMountain.group; } catch (e) { console.error('Map Mountain gagal dibuat:', e); mountainWorld = null; if (mountainWorldGroup) { scene.remove(mountainWorldGroup); mountainWorldGroup = null; } }
 
   lobbyWorldGroup = new THREE.Group();
   lobbyWorldGroup.name = 'FREE_FIRE_STYLE_LOBBY';
@@ -2459,6 +2430,7 @@ function onGameBegin() {
   if (parkourWorldGroup) parkourWorldGroup.visible = currentMap === 'lava';
   if (snowWorldGroup) snowWorldGroup.visible = currentMap === 'snow';
   if (angkasaWorldGroup) angkasaWorldGroup.visible = currentMap === 'angkasa';
+  if (mountainWorldGroup) mountainWorldGroup.visible = currentMap === 'mountain';
   if (lobbyWorldGroup) lobbyWorldGroup.visible = false;
   if (scene) {
     if (currentMap === 'snow') {
@@ -2467,6 +2439,9 @@ function onGameBegin() {
     } else if (currentMap === 'angkasa') {
       if (angkasaController && angkasaController.enter) angkasaController.enter(scene);
       else { scene.background = new THREE.Color(0x000000); scene.fog = null; }
+    } else if (currentMap === 'mountain') {
+      scene.background = new THREE.Color(0x9bc7df);
+      scene.fog = new THREE.Fog(0x9bc7df, 55, 260);
     } else {
       scene.background = new THREE.Color(0x1a1a24);
       scene.fog = new THREE.Fog(0x1a1a24, 20, 150);
@@ -2492,7 +2467,7 @@ function onGameBegin() {
 }
 // Pulihkan checkpoint terakhir (mode solo): karakter muncul di checkpoint tersimpan, bukan di awal.
 function restoreSavedCheckpoint() {
-  const sc = currentMap === 'snow' ? playerData.savedCheckpointSnow : playerData.savedCheckpoint; // checkpoint tiap map terpisah
+  const sc = currentMap === 'snow' ? playerData.savedCheckpointSnow : (currentMap === 'mountain' ? playerData.savedCheckpointMountain : playerData.savedCheckpoint); // checkpoint tiap map terpisah
   if (!sc || roomCode) return;
   const pl = platforms.find(p => p.checkpoint && Math.abs(p.mesh.position.x - sc.px) < 0.06 && Math.abs(p.mesh.position.y - sc.py) < 0.06 && Math.abs(p.mesh.position.z - sc.pz) < 0.06);
   if (!pl) return;
@@ -3517,10 +3492,10 @@ window.addEventListener('pagehide', () => { if (myRef) remove(myRef).catch(() =>
 // sehingga seluruh sistem lama (kontrol, kamera, respawn, multiplayer) tetap
 // memakai kode yang sama.
 // =====================================================================
-const MAP_LABELS = { lava: { icon: '🌋', name: 'MAP LAVA', color: '#ff6a2a' }, snow: { icon: '❄️', name: 'MAP SALJU', color: '#7fd6ff' }, angkasa: { icon: '🚀', name: 'MAP ANGKASA', color: '#a78bfa' } };
+const MAP_LABELS = { lava: { icon: '🌋', name: 'MAP LAVA', color: '#ff6a2a' }, snow: { icon: '❄️', name: 'MAP SALJU', color: '#7fd6ff' }, angkasa: { icon: '🚀', name: 'MAP ANGKASA', color: '#a78bfa' }, mountain: { icon: '🏔️', name: 'MAP GUNUNG', color: '#65c987' } };
 
 // Gacha: hanya memilih map yang benar-benar tersedia.
-function rollMap() { const available = ['lava']; if (snowWorld) available.push('snow'); if (angkasaWorld) available.push('angkasa'); return available[Math.floor(Math.random() * available.length)]; }
+function rollMap() { const available = ['lava']; if (snowWorld) available.push('snow'); if (angkasaWorld) available.push('angkasa'); if (mountainWorld) available.push('mountain'); return available[Math.floor(Math.random() * available.length)]; }
 
 // Animasi gacha singkat sebelum loading screen. done() dipanggil setelah hasil tampil.
 function playMapGacha(result, spinMs, done) {
@@ -3544,7 +3519,7 @@ function playMapGacha(result, spinMs, done) {
     }
     const slot = document.getElementById('gc-slot'), icon = document.getElementById('gc-icon'), nm = document.getElementById('gc-name'), sub = document.getElementById('gc-sub');
     el.style.display = 'flex'; slot.classList.add('spin'); slot.style.borderColor = '#fff'; slot.style.boxShadow = 'none'; sub.textContent = 'Mengacak map...';
-    const keys = ['lava', ...(snowWorld ? ['snow'] : []), ...(angkasaWorld ? ['angkasa'] : [])]; let k = 0;
+    const keys = ['lava', ...(snowWorld ? ['snow'] : []), ...(angkasaWorld ? ['angkasa'] : []), ...(mountainWorld ? ['mountain'] : [])]; let k = 0;
     const iv = setInterval(() => { k = (k + 1) % keys.length; const m = MAP_LABELS[keys[k]]; icon.textContent = m.icon; nm.textContent = m.name; }, 95);
     setTimeout(() => {
       clearInterval(iv);
@@ -3560,7 +3535,8 @@ function playMapGacha(result, spinMs, done) {
 function applyMap(id) {
   if (id === 'snow' && !snowWorld) id = 'lava';
   if (id === 'angkasa' && !angkasaWorld) id = 'lava';
-  const w = id === 'snow' ? snowWorld : (id === 'angkasa' ? angkasaWorld : lavaWorld);
+  if (id === 'mountain' && !mountainWorld) id = 'lava';
+  const w = id === 'snow' ? snowWorld : (id === 'angkasa' ? angkasaWorld : (id === 'mountain' ? mountainWorld : lavaWorld));
   if (!w) return;
   currentMap = id;
 
@@ -3576,6 +3552,7 @@ function applyMap(id) {
   if (parkourWorldGroup) parkourWorldGroup.visible = id === 'lava';
   if (snowWorldGroup) snowWorldGroup.visible = id === 'snow';
   if (angkasaWorldGroup) angkasaWorldGroup.visible = id === 'angkasa';
+  if (mountainWorldGroup) mountainWorldGroup.visible = id === 'mountain';
   if (id === 'snow' && snowController) snowController.reset();
   if (angkasaController) angkasaController.reset(physics);
   if (id === 'angkasa' && scene) {
@@ -3669,6 +3646,9 @@ function animate() {
   });
 
   hazards.forEach(h => h.update(t));
+  if (currentMap === 'mountain' && mountainWorld) {
+    (mountainWorld.swingPlanks || []).forEach(p => { if (p.mesh) p.mesh.rotation.z = Math.sin(t * p.speed + p.phase) * 0.045; });
+  }
   if (currentMap === 'snow' && snowController) snowController.update(delta, {
     curGroundPlat, physics, character, godMode, flyMode, hitCD, knock
   });
@@ -3725,7 +3705,7 @@ function animate() {
       showToast('✅ Checkpoint tersimpan!');
       if (!roomCode) { // mode solo: posisi checkpoint disimpan ke akun, jadi tetap di sini walau keluar game
         const sv = { px: +m.x.toFixed(3), py: +m.y.toFixed(3), pz: +m.z.toFixed(3), y: +groundData.y.toFixed(3) };
-        if (currentMap === 'snow') playerData.savedCheckpointSnow = sv; else playerData.savedCheckpoint = sv; // checkpoint Salju terpisah dari Lava
+        if (currentMap === 'snow') playerData.savedCheckpointSnow = sv; else if (currentMap === 'mountain') playerData.savedCheckpointMountain = sv; else playerData.savedCheckpoint = sv; // checkpoint tiap map terpisah
         updatePlayerFirebase().catch(() => {});
       }
     }
@@ -3787,11 +3767,11 @@ function animate() {
   if (character.position.y > FIN_Y - 0.5 && Math.abs(character.position.x - WIN.x) < 4.5 && Math.abs(character.position.z - WIN.z) < 4.5) {
     gameState = 'WIN'; 
     playerData.coins = (playerData.coins || 0) + 1000;
-    if (currentMap === 'snow') playerData.savedCheckpointSnow = null; else playerData.savedCheckpoint = null; // selesai: progres checkpoint map ini direset
+    if (currentMap === 'snow') playerData.savedCheckpointSnow = null; else if (currentMap === 'mountain') playerData.savedCheckpointMountain = null; else playerData.savedCheckpoint = null; // selesai: progres checkpoint map ini direset
     updatePlayerFirebase();
     document.getElementById('coin-amount').textContent = playerData.coins;
     onFinish();
-    showOverlay('YOU WIN!', (currentMap === 'snow' ? 'Kamu lolos dari dunia salju dan tembakan NPC! +1000 🪙' : currentMap === 'angkasa' ? 'Kamu berhasil menaklukkan lintasan luar angkasa! +1000 🪙' : 'Putzzdev mengakui kamu jago melewati tower, jebakan, dan labirin! +1000 🪙') + finishSummary(), '#00ff00');
+    showOverlay('YOU WIN!', (currentMap === 'snow' ? 'Kamu lolos dari dunia salju dan tembakan NPC! +1000 🪙' : currentMap === 'angkasa' ? 'Kamu berhasil menaklukkan lintasan luar angkasa! +1000 🪙' : currentMap === 'mountain' ? 'Kamu berhasil mencapai puncak gunung! +1000 🪙' : 'Putzzdev mengakui kamu jago melewati tower, jebakan, dan labirin! +1000 🪙') + finishSummary(), '#00ff00');
   }
 
   // ===== Animasi karakter: damping + squash & stretch + condong badan =====
