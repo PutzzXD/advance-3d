@@ -1,8 +1,7 @@
 // Map Pendakian Gunung PARKOUR 3D — "Realistic Mountain Adventure".
-// Dibuat terpisah dari snow.js. Semua objek visual ada di file ini; main.js tidak perlu diubah.
-// Kontrak return {world, group} sama seperti versi sebelumnya.
+// Update: Jalur diperpanjang, Hujan ditambahkan, Jalan Santai (Rest Area), Batu bergeser dihapus.
 export function buildMountainWorld(THREE, scene, api = {}) {
-  const LOW = !!api.lowQuality; // opsional: kurangi detail untuk HP lemah
+  const LOW = !!api.lowQuality;
   const grp = new THREE.Group();
   grp.name = 'MOUNTAIN_WORLD';
   grp.visible = false;
@@ -11,16 +10,16 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   const P = [], C = [], cpList = [], route = [];
   const hazards = [], windZones = [], swingPlanks = [], rotators = [];
   const vanish = [], cracks = [], npcs = [], glowCrystals = [];
-  const anim = []; // fungsi animasi dekoratif (air terjun, awan, bendera, salju dan hujan) — dipanggil lewat 1 hazard ambient
-  const CENTER = new THREE.Vector3(0, 0, -155); // Pusat map diperpanjang
+  const anim = []; // fungsi animasi dekoratif
+  const CENTER = new THREE.Vector3(0, 0, -180); // Pusat map diperpanjang
 
   // ====================================================================
-  // UTIL: matematika, noise deterministik, canvas texture
+  // UTIL: matematika, noise, canvas
   // ====================================================================
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
-  function seeded(seed) { // mulberry32
+  function seeded(seed) {
     let a = seed >>> 0;
     return () => {
       a = (a + 0x6D2B79F5) >>> 0;
@@ -48,17 +47,24 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   }
 
   // ====================================================================
-  // TULANG PUNGGUNG JALUR + FUNGSI TINGGI MEDAN (DIPERPANJANG)
+  // TULANG PUNGGUNG JALUR (DIPERPANJANG & BERKELOK)
   // ====================================================================
-  const SPINE = [[0,0.25,40],[0,0.25,9],[0,0.4,-45],[0,0.6,-53],[0,1.45,-64],[4.7,2.4,-70],[9.2,3.4,-75],
-    [13.8,4.3,-80],[17.8,4.85,-85],[17.8,4.85,-93],[12,5.45,-103],[4,6.35,-111],[4,7.45,-121],[0,9.05,-128],
-    [-5,10.75,-135],[-1,12.55,-142],[5,14.35,-149],[10,16.25,-156],[14,17.45,-164],[14,18.75,-176],
-    [9,20.45,-183],[4,22.25,-190],[-1,24.05,-197],[-6,25.75,-204],
-    // Ekstensi jalur baru (Zona 4.5 & 5)
-    [-12,27.50,-212],[-14,29.25,-220],[-10,31.00,-228],[-2,33.00,-236],[6,35.00,-244],[12,37.25,-252],
-    [14,39.50,-262],[10,41.75,-272],[2,44.00,-282],[-6,46.50,-292],[-10,49.00,-304],
-    [-10,49.00,-350]]; // Landasan akhir
-  
+  const SPINE = [
+    [0,0.25,40],[0,0.25,9],[0,0.4,-45],[0,0.6,-53],[0,1.45,-64],[4.7,2.4,-70],[9.2,3.4,-75],[13.8,4.3,-80],[17.8,4.85,-85],[17.8,4.85,-93],
+    [12,5.45,-103],[4,6.35,-111],[4,7.45,-121],[0,9.05,-128],[-5,10.75,-135],[-1,12.55,-142],[5,14.35,-149],[10,16.25,-156],[14,17.45,-164],
+    [14,18.75,-176],[9,20.45,-183],[4,22.25,-190],[-1,24.05,-197],[-6,25.75,-204],
+    // ZONA SANTAI 1 (Lereng Landai)
+    [-12,26.50,-215],[-16,27.00,-230],[-18,27.50,-245],[-14,28.00,-260],[-4,29.00,-275],
+    // ZONA RINTANGAN 2 (Tebing)
+    [4,30.50,-285],[10,32.50,-295],[14,34.50,-305],[12,37.00,-315],[6,39.50,-325],[-2,42.00,-335],
+    // ZONA SANTAI 2 (Hutan Atas)
+    [-10,43.00,-350],[-14,44.00,-365],[-10,45.00,-380],[0,46.00,-395],
+    // ZONA RINTANGAN 3 (Puncak Es)
+    [10,48.00,-410],[16,50.50,-420],[14,53.00,-430],[6,55.50,-440],[-2,58.00,-450],
+    // ZONA FINISH
+    [-10,60.00,-465],[-10,60.00,-500]
+  ];
+
   function spineAt(z) {
     if (z >= SPINE[0][2]) return { x: SPINE[0][0], y: SPINE[0][1] };
     for (let i = 1; i < SPINE.length; i++) {
@@ -70,17 +76,18 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     const e = SPINE[SPINE.length - 1];
     return { x: e[0], y: e[1] };
   }
-  function hf(x, z) { // tinggi medan di (x,z)
+
+  function hf(x, z) {
     const s = spineAt(z), dx = Math.abs(x - s.x);
-    const g = smooth(clamp(-z / 310, 0, 1)); // Skala gradien diperpanjang
-    const depth = 9 + 22 * g;                       // jurang makin dalam ke atas
-    const W = lerp(95, 28, g * g);                  // tinggi dinding lembah
+    const g = smooth(clamp(-z / 480, 0, 1)); 
+    const depth = 9 + 25 * g;                       
+    const W = lerp(95, 35, g * g);                  
     const wall = W * (1 - Math.exp(-Math.pow(Math.max(0, dx - 6), 1.2) / 55));
-    const amp = 0.4 + 26 * smooth((dx - 8) / 46);
+    const amp = 0.4 + 28 * smooth((dx - 8) / 46);
     const n1 = (fbm(x * 0.04, z * 0.04) - 0.5) * 2 * amp;
     const n2 = (vnoise(x * 0.13, z * 0.13) - 0.5) * 7 * smooth(dx / 30);
-    const back = smooth((z - 8) / 32) * 38;         // bukit di belakang titik start
-    const end = smooth((-z - 312) / 50) * 24;       // punggungan di belakang puncak
+    const back = smooth((z - 8) / 32) * 38;         
+    const end = smooth((-z - 480) / 50) * 24;       
     return s.y - depth + wall + n1 + n2 + back + end;
   }
 
@@ -102,8 +109,8 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   grp.add(new THREE.HemisphereLight(0xdff0ff, 0x5b6b45, 1.15));
   const sunDir = new THREE.Vector3(-110, 55, -60).normalize();
   const sun = new THREE.DirectionalLight(0xffe0b0, 1.55);
-  sun.position.set(0, 10, -155).addScaledVector(sunDir, 160);
-  sun.target.position.set(0, 10, -155);
+  sun.position.set(0, 10, -180).addScaledVector(sunDir, 160);
+  sun.target.position.set(0, 10, -180);
   sun.castShadow = true;
   sun.shadow.mapSize.set(LOW ? 1024 : 2048, LOW ? 1024 : 2048);
   Object.assign(sun.shadow.camera, { left: -155, right: 155, top: 155, bottom: -155, near: 1, far: 450 });
@@ -113,7 +120,7 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   const fill = new THREE.DirectionalLight(0xa8c8ff, 0.4);
   fill.position.set(70, 30, 70); grp.add(fill);
 
-  const R = 550;
+  const R = 600;
   const skyGeo = new THREE.SphereGeometry(R, 24, 16);
   { const p = skyGeo.attributes.position, col = new Float32Array(p.count * 3);
     const cTop = new THREE.Color(0x2b78cf), cMid = new THREE.Color(0x76b8ee), cHor = new THREE.Color(0xe3eef2), c = new THREE.Color();
@@ -191,21 +198,6 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   }
   const top = p => p.mesh.position.y + p.hh;
   const checkpointPlatform = (x, y, z, w, d) => plat(x, y, z, w, d, { kind: 'grass', cp: true, route: 1 });
-  // Jalur santai: pijakan tanah lebar yang saling overlap, melengkung mengikuti lereng.
-  // Setiap segmen adalah platform collision statis, bukan dekorasi saja.
-  function easyTrail(points, width = 7.2, depth = 5.2) {
-    for (let i = 0; i < points.length; i++) {
-      const [x, y, z] = points[i];
-      plat(x, y, z, width, depth, { kind: 'dirt', route: 1, h: 0.55 });
-      // Batu tepi kecil sebagai penanda jalur, tidak menghalangi lintasan.
-      for (const side of [-1, 1]) {
-        const bx = x + side * (width * 0.58);
-        const by = hf(bx, z);
-        if (i % 2 === 0) rimBoulders.push([bx, by + 0.12, z + 0.4, 0.42]);
-      }
-    }
-  }
-
   function plinth(cx, cz, topY, rt, rb, m) {
     const H = topY - (hf(cx, cz) - 2);
     if (H < 0.6) return;
@@ -226,9 +218,9 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   }
 
   // ====================================================================
-  // ZONA 1 — padang rumput basecamp, hutan pinus, kolam sungai, terowongan batu
+  // ZONA 1 — Basecamp & Hutan
   // ====================================================================
-  const pad = plat(0, 0, 0, 18, 18, { kind: 'grass', route: 1 });
+  plat(0, 0, 0, 18, 18, { kind: 'grass', route: 1 });
   plat(0, 0, -15, 12, 13, { kind: 'grass', route: 1 });
   for (const [x, z, s] of [[-7.8,-5,1.3],[7.8,-6,1.2],[-8,4,1.1],[8,5,1.4],[-5.3,-11,1.1],[5.3,-19,1.2],[-5.2,-19.5,1.0]]) manualTrees.push([x, z < -9 ? 0.25 : 0.25, z, s]);
   sign('BASECAMP\nMULAI PENDAKIAN', 3.2, 0.25, -6.5, -0.15);
@@ -252,28 +244,24 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     const lampMat = new THREE.MeshBasicMaterial({ color: 0xffc46b });
     for (const sx of [-1, 1]) for (const lz of [-45.5, -40.5]) { const l = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), lampMat); l.position.set(sx * 3.55, 3, lz); grp.add(l); }
   }
-  checkpointPlatform(0, 0.35, -53, 12, 10); // CP 1 — keluar terowongan
+  checkpointPlatform(0, 0.35, -53, 12, 10); // CP 1
 
   // ====================================================================
-  // ZONA 2 — lereng, rintangan batu statis, jembatan gantung (DIPERBAIKI), longsoran
+  // ZONA 2 — Lereng, Jembatan, Longsoran
   // ====================================================================
   plat(0, 1.2, -64, 7, 7, { kind: 'stone', route: 1 });
-  plat(4.7, 2.2, -70, 3.4, 3.4, { kind: 'stone', type: 'static', range: 0.8, speed: 1.2, route: 1 });
-  plat(9.2, 3.1, -75, 3.2, 3.2, { kind: 'stone', type: 'static', range: 1.7, speed: 1.1, route: 1 });
-  plat(13.8, 4.0, -80, 3.2, 3.2, { kind: 'stone', type: 'static', range: 0.9, speed: 1.4, route: 1 });
+  plat(4.7, 2.2, -70, 3.4, 3.4, { kind: 'stone', type: 'moving_y', range: 0.8, speed: 1.2, route: 1 });
+  plat(9.2, 3.1, -75, 3.2, 3.2, { kind: 'stone', type: 'moving_x', range: 1.7, speed: 1.1, route: 1 });
+  plat(13.8, 4.0, -80, 3.2, 3.2, { kind: 'stone', type: 'moving_y', range: 0.9, speed: 1.4, route: 1 });
   plat(17.8, 4.6, -85, 5, 5, { kind: 'stone', route: 1 });
   sign('JEMBATAN\nGANTUNG', 20.1, 4.85, -83.6, -0.3);
+  plat(17.8, 4.6, -89.6, 1.3, 3.4, { log: true, kind: 'wood', route: 1 });
   
-  // Batang kayu penghubung
-  plat(17.8, 4.6, -89.6, 1.3, 3.4, { log: true, kind: 'wood', route: 1 }); 
-  
-  // PERBAIKAN JEMBATAN: Collider papan disamakan dengan visual papan
   for (let i = 0; i < 7; i++) { 
     const x = 17.8 + (i - 3) * 1.75;
     const plank = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.22, 2.8), woodMat);
     plank.position.set(x, 4.85, -93); plank.castShadow = true; grp.add(plank);
     swingPlanks.push({ mesh: plank, speed: 1.1 + i * 0.06, phase: i * 0.72 });
-    // Platformnya dibuat lebih tebal (0.3) dan visual plank disesuaikan agar kaki pas menginjak
     plat(x, 4.7, -93, 1.62, 2.8, { kind: 'wood', route: 1, h: 0.3 }); 
   }
   plat(12, 4.9, -96.7, 1.3, 4.2, { log: true, kind: 'wood', route: 1 });
@@ -292,24 +280,51 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     }
     const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(hang, 3));
     grp.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x4c3828 }))); }
+
+  // FUNGSI rollingRock DIHAPUS TOTAL.
   
-  // Zona longsoran kini aman: tanpa batu jatuh atau animasi batu.
+  function rockfall(x, z, topY, period, offset, hgt = 16) {
+    const r = 0.95, y1 = topY + r + 0.1, y0 = topY + hgt, warnT = 1.2, fall = 0.85;
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), darkStoneMat);
+    mesh.visible = false; mesh.castShadow = true; grp.add(mesh);
+    const warn = new THREE.Mesh(new THREE.RingGeometry(0.5, 1.25, 20), new THREE.MeshBasicMaterial({ color: 0xff7a3a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+    warn.rotation.x = -Math.PI / 2; warn.position.set(x, topY + 0.07, z); grp.add(warn);
+    let active = false;
+    hazards.push({
+      mesh, radius: r,
+      update(t) {
+        const c = (((t + offset) % period) + period) % period;
+        active = false; mesh.visible = false; warn.material.opacity = 0;
+        if (c < warnT) warn.material.opacity = 0.25 + 0.45 * Math.abs(Math.sin(c * 8));
+        else if (c < warnT + fall) { const f = (c - warnT) / fall; mesh.position.set(x, lerp(y0, y1, f * f), z); mesh.rotation.x = c * 5; mesh.visible = true; warn.material.opacity = 0.7; active = true; }
+        else if (c < warnT + fall + 0.35) { mesh.position.set(x, y1, z); mesh.visible = true; }
+      },
+      test(pp) {
+        if (!active) return false;
+        const dx = pp.x - mesh.position.x, dy = (pp.y + 0.8) - mesh.position.y, dz = pp.z - mesh.position.z;
+        if (dx * dx + dy * dy + dz * dz < (r + 0.7) * (r + 0.7)) { const len = Math.hypot(dx, dz) || 1; return { x: dx / len, z: dz / len }; }
+        return false;
+      }
+    });
+  }
   const slide = plat(12, 5.2, -103, 8, 8, { kind: 'stone', route: 1 });
+  sign('AWAS!\nLONGSORAN', 15.4, top(slide), -99.9, 0.25);
+  for (const [rx, rz, off] of [[9.4, -101.5, 0], [12, -104.3, 1.1], [14.6, -101.8, 2.2], [10.8, -106.2, 0.6]]) rockfall(rx, rz, top(slide), 3.6, off);
   const cp2 = checkpointPlatform(4, 6.1, -111, 9, 8); // CP 2
   sign('BADAI\nBERANGIN', 7.6, top(cp2), -108.6, -0.2);
 
   // ====================================================================
-  // ZONA 3 — tebing, platform parkour, jalur sempit, badai dan pendulum
+  // ZONA 3 — Tebing & Badai
   // ====================================================================
   plat(4, 6.7, -117, 1.6, 3.2, { log: true, kind: 'wood', route: 1 });
   plat(4, 7.2, -121, 4.2, 4.2, { kind: 'stone', route: 1 });
   plat(0, 8.8, -128, 2.5, 2.5, { kind: 'stone', route: 1 });
   plat(-5, 10.5, -135, 2.3, 2.3, { kind: 'stone', route: 1 });
   plat(-3, 11.4, -138.5, 1.6, 3.4, { kind: 'stone', route: 1 });
-  plat(-1, 12.3, -142, 2.2, 2.2, { kind: 'stone', type: 'static', range: 1.3, speed: 1.25, route: 1 });
+  plat(-1, 12.3, -142, 2.2, 2.2, { kind: 'stone', type: 'moving_x', range: 1.3, speed: 1.25, route: 1 });
   plat(5, 14.1, -149, 2.2, 2.2, { kind: 'stone', route: 1 });
   plat(7.5, 15.0, -152.5, 1.8, 2, { kind: 'stone', route: 1 });
-  plat(10, 16, -156, 2.1, 2.1, { kind: 'stone', type: 'static', range: 0.75, speed: 1.4, route: 1 });
+  plat(10, 16, -156, 2.1, 2.1, { kind: 'stone', type: 'moving_y', range: 0.75, speed: 1.4, route: 1 });
   const cp3 = checkpointPlatform(14, 17.2, -164, 8, 8); // CP 3
   plat(14, 17.9, -171, 1.4, 5.2, { log: true, kind: 'wood', route: 1 });
   
@@ -336,62 +351,71 @@ export function buildMountainWorld(THREE, scene, api = {}) {
   });
 
   // ====================================================================
-  // ZONA 4 — tanjakan akhir bersalju dan puncak
+  // ZONA 4 — Tanjakan Awal (Menuju Jalan Santai 1)
   // ====================================================================
   plat(14, 18.5, -176, 4, 4, { kind: 'stone', route: 1 });
   const ledge = plat(9, 20.2, -183, 2.4, 2.4, { kind: 'stone', route: 1 });
   const ledge2 = plat(4, 22, -190, 2.3, 2.3, { kind: 'snow', route: 1 });
-  plat(-1, 23.8, -197, 2.3, 2.3, { kind: 'snow', type: 'static', range: 1.1, speed: 1.0, route: 1 });
-
-
-  const cp4 = checkpointPlatform(-6, 25.5, -204, 12, 12); // CP 4 (Sebelum Zona Ekstensi)
-
-  // ====================================================================
-  // ZONA 4.5 — LERENG BERSALJU (EKSTENSI BARU)
-  // ====================================================================
-  plat(-12, 27.5, -212, 3.5, 3.5, { kind: 'snow', type: 'static', range: 1.2, speed: 1.1, route: 1 });
-  plat(-14, 29.25, -220, 2.5, 2.5, { kind: 'snow', route: 1 });
-  plat(-10, 31, -228, 2, 2, { kind: 'snow', type: 'static', range: 1.5, speed: 1.3, route: 1 });
-  plat(-2, 33, -236, 2.2, 2.2, { kind: 'snow', route: 1 });
-
-  plat(6, 35, -244, 2, 2, { kind: 'snow', type: 'static', range: 1.5, speed: 1.5, route: 1 });
-  const cp5 = checkpointPlatform(12, 37.25, -252, 10, 10); // CP 5
+  plat(-1, 23.8, -197, 2.3, 2.3, { kind: 'snow', type: 'moving_x', range: 1.1, speed: 1.0, route: 1 });
+  rockfall(9, -183, top(ledge), 4.6, 0.0, 15);
+  rockfall(4, -190, top(ledge2), 4.6, 2.3, 15);
+  checkpointPlatform(-6, 25.5, -204, 12, 12); // CP 4
 
   // ====================================================================
-  // ZONA 5 — PUNCAK ES (EKSTENSI BARU & RINTANGAN EKSTREM)
+  // JALAN SANTAI 1 (Panjang, Tanpa Rintangan)
   // ====================================================================
-  sign('AWAS!\nANGIN KENCANG', 14.5, top(cp5), -249, 0);
-  windZones.push({ x: 14, z: -262, hx: 10, hz: 10, dx: 0, dz: 12, maxY: 50 });
-  plat(14, 39.5, -262, 1.8, 1.8, { kind: 'snow', route: 1 });
-  plat(10, 41.75, -272, 1.5, 1.5, { kind: 'snow', type: 'static', range: 2.2, speed: 1.6, route: 1 });
-  plat(2, 44, -282, 1.2, 1.2, { kind: 'snow', type: 'static', range: 2, speed: 1.8, route: 1 });
-  plat(-6, 46.5, -292, 1.5, 1.5, { kind: 'snow', route: 1 });
-  const finalSummit = plat(-10, 49, -304, 24, 24, { kind: 'snow', route: 1 }); // PUNCAK ASLI
-
-
-  // ====================================================================
-  // JALAN SANTAI PANJANG — transisi aman setelah kelompok parkour
-  // ====================================================================
-  easyTrail([
-    [-6,25.5,-204],[-8,26.0,-208],[-10,26.5,-212],[-11,27.0,-216],
-    [-10,27.5,-220],[-7,28.0,-224],[-4,28.5,-228]
-  ], 7.8, 5.4);
-  easyTrail([
-    [12,37.25,-252],[9,37.8,-257],[6,38.3,-262],[3,38.8,-267],
-    [0,39.3,-272],[-3,39.8,-277],[-6,40.3,-282],[-8,40.8,-287]
-  ], 8.0, 5.6);
-  // Jalan santai terakhir yang lebar mengarah ke dataran puncak.
-  easyTrail([[-8,46.5,-292],[-9,47.0,-296],[-10,47.5,-300]], 8.5, 5.8);
+  sign('JALAN SANTAI\nNIKMATI PEMANDANGAN', -6, 25.75, -206, 0);
+  plat(-8, 26, -210, 6, 8, { kind: 'dirt', route: 1 });
+  plat(-12, 26.2, -218, 10, 12, { kind: 'grass', route: 1 });
+  plat(-15, 26.5, -230, 8, 15, { kind: 'dirt', route: 1 });
+  plat(-16, 27, -245, 12, 18, { kind: 'grass', route: 1 });
+  plat(-12, 27.5, -258, 8, 14, { kind: 'dirt', route: 1 });
+  plat(-4, 28.2, -268, 10, 12, { kind: 'grass', route: 1 });
+  checkpointPlatform(2, 28.8, -276, 8, 8); // CP 5 (Ujung jalan santai 1)
 
   // ====================================================================
-  // DEKORASI PUNCAK ASLI (FINISH)
+  // ZONA RINTANGAN 2 (Tebing Curam 2)
   // ====================================================================
-  plinth(-10, -304, 49 - 0.01, 9, 4.5, mat(0x7d7f80, { flatShading: true }));
-  const WINP = { x: -10, y: top(finalSummit), z: -304 };
-  { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 10, 10), mat(0xe5e5e5)); pole.position.set(-18, WINP.y + 5, -300); grp.add(pole);
+  plat(6, 30, -285, 2.5, 2.5, { kind: 'stone', type: 'moving_y', range: 1.5, speed: 1.2, route: 1 });
+  plat(10, 32, -295, 2, 2, { kind: 'stone', route: 1 });
+  plat(14, 34, -305, 2, 2, { kind: 'stone', type: 'moving_x', range: 2, speed: 1.5, route: 1 });
+  plat(12, 36.5, -315, 2.5, 2.5, { kind: 'stone', route: 1 });
+  plat(6, 39, -325, 2, 2, { kind: 'stone', type: 'moving_y', range: 1.8, speed: 1.4, route: 1 });
+  const cp6 = checkpointPlatform(-2, 41.5, -335, 8, 8); // CP 6
+
+  // ====================================================================
+  // JALAN SANTAI 2 (Panjang, Tanpa Rintangan)
+  // ====================================================================
+  plat(-6, 42, -342, 8, 10, { kind: 'dirt', route: 1 });
+  plat(-12, 42.5, -355, 12, 16, { kind: 'grass', route: 1 });
+  plat(-14, 43, -370, 10, 14, { kind: 'dirt', route: 1 });
+  plat(-8, 43.5, -382, 12, 12, { kind: 'grass', route: 1 });
+  plat(0, 44, -393, 8, 10, { kind: 'dirt', route: 1 });
+  checkpointPlatform(4, 44.5, -400, 8, 8); // CP 7
+
+  // ====================================================================
+  // ZONA RINTANGAN 3 (Puncak Es)
+  // ====================================================================
+  sign('AWAS!\nPUNCAK ES', 4, 44.75, -402, 0);
+  plat(8, 46, -408, 1.8, 1.8, { kind: 'snow', route: 1 });
+  plat(12, 48, -415, 1.5, 1.5, { kind: 'snow', type: 'moving_x', range: 2.5, speed: 1.6, route: 1 });
+  plat(16, 50.5, -420, 1.5, 1.5, { kind: 'snow', route: 1 });
+  plat(14, 53, -430, 1.5, 1.5, { kind: 'snow', type: 'moving_y', range: 2, speed: 1.8, route: 1 });
+  plat(6, 55.5, -440, 1.8, 1.8, { kind: 'snow', route: 1 });
+  checkpointPlatform(-2, 58, -450, 10, 10); // CP 8
+
+  // ====================================================================
+  // JALAN MENUJU PUNCAK & FINISH
+  // ====================================================================
+  plat(-6, 58.5, -456, 6, 6, { kind: 'snow', route: 1 });
+  const finalSummit = plat(-10, 60, -468, 24, 24, { kind: 'snow', route: 1 });
+  plinth(-10, -468, 60 - 0.01, 10, 5, mat(0x7d7f80, { flatShading: true }));
+  
+  const WINP = { x: -10, y: top(finalSummit), z: -468 };
+  { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 10, 10), mat(0xe5e5e5)); pole.position.set(-18, WINP.y + 5, -464); grp.add(pole);
     const cloth = new THREE.PlaneGeometry(3.5, 2, 12, 4), basePos = Float32Array.from(cloth.attributes.position.array);
     const flag = new THREE.Mesh(cloth, new THREE.MeshStandardMaterial({ color: 0xffcc33, side: THREE.DoubleSide, roughness: 0.8 }));
-    flag.position.set(-18 + 1.75, WINP.y + 9, -300); grp.add(flag);
+    flag.position.set(-18 + 1.75, WINP.y + 9, -464); grp.add(flag);
     anim.push(t => { const a = cloth.attributes.position;
       for (let i = 0; i < a.count; i++) { const bx = basePos[i * 3]; a.setZ(i, Math.sin(bx * 2.2 - t * 4) * 0.25 * (bx + 1.75) / 3.5); }
       a.needsUpdate = true; });
@@ -400,22 +424,22 @@ export function buildMountainWorld(THREE, scene, api = {}) {
       g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.font = 'bold 68px sans-serif'; g.fillText('PUNCAK GUNUNG', 512, 92); g.font = 'bold 62px sans-serif'; g.fillText('TERCAPAI', 512, 177);
     });
-    for (const gx of [-18, -2]) { const gp = new THREE.Mesh(new THREE.BoxGeometry(0.4, 11, 0.4), woodMat); gp.position.set(gx, WINP.y + 5.5, -312); gp.castShadow = true; grp.add(gp); }
+    for (const gx of [-18, -2]) { const gp = new THREE.Mesh(new THREE.BoxGeometry(0.4, 11, 0.4), woodMat); gp.position.set(gx, WINP.y + 5.5, -476); gp.castShadow = true; grp.add(gp); }
     const board = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), new THREE.MeshBasicMaterial({ map: canvas, side: THREE.DoubleSide }));
-    board.position.set(-10, WINP.y + 6.5, -312); grp.add(board);
+    board.position.set(-10, WINP.y + 6.5, -476); grp.add(board);
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 3.2, 80, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd45a, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     beam.position.set(WINP.x, WINP.y + 40, WINP.z); grp.add(beam);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.15, 8, 32), new THREE.MeshBasicMaterial({ color: 0xffd45a }));
     ring.rotation.x = Math.PI / 2; ring.position.set(WINP.x, WINP.y + 0.3, WINP.z); grp.add(ring);
     anim.push(t => { ring.scale.setScalar(1 + Math.sin(t * 2.5) * 0.08); beam.material.opacity = 0.16 + Math.sin(t * 1.7) * 0.05; });
-    for (let i = 0; i < 5; i++) rimBoulders.push([-6 + (i % 2) * 0.4, WINP.y + 0.25 + i * 0.45, -298, 1.1 - i * 0.18]); // cairn batu
+    for (let i = 0; i < 5; i++) rimBoulders.push([-6 + (i % 2) * 0.4, WINP.y + 0.25 + i * 0.45, -462, 1.1 - i * 0.18]);
   }
 
   // ====================================================================
-  // MEDAN (heightfield berwarna): Diperluas untuk area Z 40 sampai -360
+  // MEDAN (HEIGHTFIELD) - DIPERLUAS
   // ====================================================================
-  { const GX = LOW ? 80 : 130, GZ = LOW ? 120 : 200, zc = -160;
-    const tg = new THREE.PlaneGeometry(360, 420, GX, GZ); tg.rotateX(-Math.PI / 2);
+  { const GX = LOW ? 80 : 130, GZ = LOW ? 120 : 200, zc = -220;
+    const tg = new THREE.PlaneGeometry(400, 600, GX, GZ); tg.rotateX(-Math.PI / 2);
     const pos = tg.attributes.position;
     for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getZ(i) + zc; pos.setXYZ(i, x, hf(x, z), z); }
     tg.computeVertexNormals();
@@ -423,7 +447,7 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     const gA = new THREE.Color(0x3f7a3a), gB = new THREE.Color(0x65994a), rock = new THREE.Color(0x7b7e7f), rockD = new THREE.Color(0x585b5d), snow = new THREE.Color(0xf2f7fb), dirt = new THREE.Color(0x7a5c3d);
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), ny = nrm.getY(i), n = vnoise(x * 0.12, z * 0.12);
-      const slope = 1 - ny, snowLine = 55 + n * 12;
+      const slope = 1 - ny, snowLine = 65 + n * 15;
       if (y > snowLine && ny > 0.35) c.copy(snow);
       else if (slope > 0.3) c.copy(rock).lerp(rockD, clamp((slope - 0.3) * 2 + n * 0.4, 0, 1));
       else if (y > 26) c.copy(gA).lerp(rock, smooth((y - 26) / 14 + n * 0.3));
@@ -434,7 +458,9 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     const terrain = new THREE.Mesh(tg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
     terrain.receiveShadow = true; terrain.frustumCulled = false; grp.add(terrain); }
 
-  // pita (sungai / air terjun)
+  // ====================================================================
+  // AIR TERJUN & SUNGAI
+  // ====================================================================
   function ribbon(pts, widthFn, yOff, material, vScale) {
     const pos = [], uv = [], idx = [], n = pts.length;
     for (let i = 0; i < n; i++) {
@@ -448,7 +474,7 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     g.computeVertexNormals();
     const m = new THREE.Mesh(g, material); m.frustumCulled = false; grp.add(m); return m;
   }
-  { const pts = []; for (let z = 30; z > -315; z -= 5) pts.push([spineAt(z).x + 2.5 * Math.sin(z * 0.04), z]);
+  { const pts = []; for (let z = 30; z > -490; z -= 5) pts.push([spineAt(z).x + 2.5 * Math.sin(z * 0.04), z]);
     ribbon(pts, () => 5, 0.25, waterMat, 1); }
   { const fallTex = canvasTex(64, 256, (g, w, h) => {
       g.fillStyle = '#4aa9dc'; g.fillRect(0, 0, w, h); const r = seeded(21);
@@ -484,43 +510,109 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     g.computeVertexNormals(); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const m = new THREE.Mesh(g, farMat); m.position.set(x, -40 + hgt / 2, z); m.rotation.y = seed; m.frustumCulled = false; grp.add(m);
   }
-  { const rF = seeded(55), layers = [[235, 12, 85, 140, 0.18], [320, 14, 120, 190, 0.42], [410, 16, 160, 250, 0.66]];
+  { const rF = seeded(55), layers = [[260, 14, 100, 160, 0.18], [360, 16, 140, 210, 0.42], [460, 18, 180, 270, 0.66]];
     layers.forEach(([dist, n, h0, h1, hz], li) => {
       for (let i = 0; i < n; i++) {
         const a = ((i + rF() * 0.6) / n) * Math.PI * 2, d = dist + (rF() - 0.5) * 40;
-        farMountain(CENTER.x + Math.cos(a) * d, CENTER.z + Math.sin(a) * d, 70 + rF() * 30, lerp(h0, h1, rF()), hz, li * 7 + i * 1.7);
+        farMountain(CENTER.x + Math.cos(a) * d, CENTER.z + Math.sin(a) * d, 80 + rF() * 35, lerp(h0, h1, rF()), hz, li * 7 + i * 1.7);
       }
     });
-    farMountain(-45, -450, 120, 300, 0.5, 91); farMountain(70, -460, 110, 260, 0.5, 93); }
+    farMountain(-50, -550, 140, 350, 0.5, 91); farMountain(80, -560, 130, 300, 0.5, 93); }
 
   // ====================================================================
   // AWAN & KABUT
   // ====================================================================
   { const mistMat = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, fog: false });
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 18; i++) {
       const z = -10 - i * 24, s = spineAt(z), m = new THREE.Mesh(new THREE.PlaneGeometry(120, 62), mistMat);
       m.rotation.x = -Math.PI / 2; m.rotation.z = i * 0.7; m.position.set(s.x + (i % 2 ? 9 : -9), s.y - 5.5 - (i % 3) * 1.5, z); grp.add(m);
     }
     const rc = seeded(404), mats = [0.95, 0.8, 0.6].map(o => new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: o, depthWrite: false, fog: false })), clouds = [];
     const nC = LOW ? 24 : 42;
     for (let i = 0; i < nC; i++) {
-      const a = rc() * Math.PI * 2, d = 150 + rc() * 250, sp = new THREE.Sprite(mats[i % 3]);
-      sp.position.set(CENTER.x + Math.cos(a) * d, 60 + d * 0.25 + rc() * 50, CENTER.z + Math.sin(a) * d);
+      const a = rc() * Math.PI * 2, d = 150 + rc() * 300, sp = new THREE.Sprite(mats[i % 3]);
+      sp.position.set(CENTER.x + Math.cos(a) * d, 70 + d * 0.25 + rc() * 50, CENTER.z + Math.sin(a) * d);
       sp.scale.set(100 + rc() * 100, 42 + rc() * 30, 1); grp.add(sp); clouds.push([sp, sp.position.x, rc() * 6]);
     }
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2, r = 32 + (i % 3) * 10, sp = new THREE.Sprite(mats[2]);
-      sp.position.set(-10 + Math.cos(a) * r, 24 + (i % 4) * 2.5, -304 + Math.sin(a) * r); sp.scale.set(40, 16, 1); grp.add(sp); clouds.push([sp, sp.position.x, i]);
+      sp.position.set(-10 + Math.cos(a) * r, 24 + (i % 4) * 2.5, -468 + Math.sin(a) * r); sp.scale.set(40, 16, 1); grp.add(sp); clouds.push([sp, sp.position.x, i]);
     }
     anim.push(t => { for (const [sp, bx, ph] of clouds) sp.position.x = bx + Math.sin(t * 0.03 + ph) * 24; }); }
 
-  // salju tertiup angin
-  { const SN = LOW ? 160 : 350, rs = seeded(77), sp = new Float32Array(SN * 3), bx = [], by = [], bp = [];
-    for (let i = 0; i < SN; i++) { bx.push(lerp(-30, 40, rs())); by.push(rs() * 45); bp.push(rs() * 6.28); sp[i * 3 + 2] = lerp(-315, -200, rs()); }
-    const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-    const pts = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, transparent: true, opacity: 0.85, depthWrite: false })); pts.frustumCulled = false; grp.add(pts);
-    anim.push(t => { for (let i = 0; i < SN; i++) { sp[i * 3] = bx[i] + Math.sin(t * 0.8 + bp[i]) * 1.5 + t * 0.7 % 8; sp[i * 3 + 1] = 10 + ((((by[i] - t * 2.5) % 45) + 45) % 45); }
-      sg.attributes.position.needsUpdate = true; }); }
+  // ====================================================================
+  // EFEK HUJAN ANIMASI (DITAMBAHKAN)
+  // ====================================================================
+  const rainCount = LOW ? 1000 : 3000;
+  const rainGeo = new THREE.BufferGeometry();
+  const rainPos = new Float32Array(rainCount * 3);
+  const rainVel = new Float32Array(rainCount); // Kecepatan jatuh berbeda-beda
+  
+  for (let i = 0; i < rainCount; i++) {
+    rainPos[i * 3] = Math.random() * 160 - 80;     // X
+    rainPos[i * 3 + 1] = Math.random() * 80;       // Y
+    rainPos[i * 3 + 2] = Math.random() * 500 - 250;// Z
+    rainVel[i] = 40 + Math.random() * 20;          // Kecepatan
+  }
+  
+  rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+  
+  // Material garis tipis transparan
+  const rainMat = new THREE.LineBasicMaterial({
+    color: 0xaaccff,
+    transparent: true,
+    opacity: 0.35,
+    linewidth: 1
+  });
+  
+  // Membuat garis untuk setiap partikel
+  const rainLinesGeo = new THREE.BufferGeometry();
+  const rainLinesPos = new Float32Array(rainCount * 6); // 2 titik per garis
+  rainLinesGeo.setAttribute('position', new THREE.BufferAttribute(rainLinesPos, 3));
+  const rainMesh = new THREE.LineSegments(rainLinesGeo, rainMat);
+  rainMesh.frustumCulled = false;
+  grp.add(rainMesh);
+
+  // Animasi Hujan menggunakan delta time
+  let rainTime = 0;
+  anim.push((t) => {
+    // Gunakan delta kira-kira 0.016 untuk frame 60fps
+    const dt = 0.016;
+    rainTime += dt;
+    
+    const pos = rainGeo.attributes.position.array;
+    const linesPos = rainLinesGeo.attributes.position.array;
+    
+    for (let i = 0; i < rainCount; i++) {
+      // Jatuhkan hujan
+      pos[i * 3 + 1] -= rainVel[i] * dt;
+      
+      // Jika menyentuh tanah, reset ke atas
+      if (pos[i * 3 + 1] < -10) { 
+        pos[i * 3 + 1] = 80; 
+        // Reset posisi X, Z secara acak di sekitar pusat
+        pos[i * 3] = CENTER.x + (Math.random() * 160 - 80);
+        pos[i * 3 + 2] = CENTER.z + (Math.random() * 500 - 250);
+      }
+      
+      // Update garis hujan
+      const px = pos[i * 3];
+      const py = pos[i * 3 + 1];
+      const pz = pos[i * 3 + 2];
+      
+      // Titik awal (atas)
+      linesPos[i * 6] = px;
+      linesPos[i * 6 + 1] = py;
+      linesPos[i * 6 + 2] = pz;
+      
+      // Titik akhir (bawah)
+      linesPos[i * 6 + 3] = px;
+      linesPos[i * 6 + 4] = py - 1.5; // Panjang garis hujan
+      linesPos[i * 6 + 5] = pz;
+    }
+    rainGeo.attributes.position.needsUpdate = true;
+    rainLinesGeo.attributes.position.needsUpdate = true;
+  });
 
   // ====================================================================
   // VEGETASI, BATU, RUMPUT
@@ -540,11 +632,10 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     return false;
   };
 
-  // --- Hutan pinus
-  { const rT = seeded(101), trees = [], want = LOW ? 420 : 850;
+  { const rT = seeded(101), trees = [], want = LOW ? 500 : 1000;
     for (let tries = 0; trees.length < want && tries < want * 16; tries++) {
-      const z = lerp(34, -315, rT()), s0 = spineAt(z), x = s0.x + (rT() < 0.5 ? -1 : 1) * (7 + Math.pow(rT(), 1.5) * 110), y = hf(x, z);
-      if (Math.abs(x) > 155 || y > 28 + (vnoise(x * 0.05, z * 0.05) - 0.5) * 10) continue;
+      const z = lerp(34, -480, rT()), s0 = spineAt(z), x = s0.x + (rT() < 0.5 ? -1 : 1) * (7 + Math.pow(rT(), 1.5) * 110), y = hf(x, z);
+      if (Math.abs(x) > 155 || y > 30 + (vnoise(x * 0.05, z * 0.05) - 0.5) * 10) continue;
       if (Math.hypot(hf(x + 2, z) - hf(x - 2, z), hf(x, z + 2) - hf(x, z - 2)) > 3.5) continue;
       const s = 0.9 + rT() * 0.9; if (nearPlat(x, z, y + 8 * s)) continue;
       trees.push([x, y - 0.15, z, s]);
@@ -559,9 +650,8 @@ export function buildMountainWorld(THREE, scene, api = {}) {
       tierDef.forEach(([r, h, cy], i) => put(tiers[i], x, y + cy * s, z, s, s, s, ry, tmpC));
     } }
 
-  // --- Tebing batu besar
-  { const rC = seeded(303), A = inst(rockV[0], cliffMat, 80, !LOW), B = inst(rockV[1], cliffMat, 80, !LOW);
-    for (let z = -30; z > -315; z -= LOW ? 12 : 8) for (const side of [-1, 1]) {
+  { const rC = seeded(303), A = inst(rockV[0], cliffMat, 90, !LOW), B = inst(rockV[1], cliffMat, 90, !LOW);
+    for (let z = -30; z > -480; z -= LOW ? 12 : 8) for (const side of [-1, 1]) {
       const r = 5 + rC() * 6, hgt = 10 + rC() * (12 + -z * 0.12), x = spineAt(z).x + side * (r + 10 + rC() * 10), base = hf(x, z) - 4;
       tmpC.setHSL(0.08 + rC() * 0.05, 0.05 + rC() * 0.08, 0.34 + rC() * 0.1);
       put(rC() < 0.5 ? A : B, x, base + hgt * 0.4, z + rC() * 4, r, hgt * 0.55, r * 0.85, rC() * 6.28, tmpC);
@@ -569,12 +659,11 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     const tm = new THREE.Mesh(rockV[0], darkStoneMat);
     tm.scale.set(8.5, 4.4, 7); tm.position.set(0, 7.6, -43); tm.castShadow = true; grp.add(tm); }
 
-  // --- Batu kecil/besar
-  { const rR = seeded(808), nB = (LOW ? 160 : 340) + rimBoulders.length + decoPlats.length * 3;
+  { const rR = seeded(808), nB = (LOW ? 180 : 380) + rimBoulders.length + decoPlats.length * 3;
     const boulders = inst(rockV[2], cliffMat, nB, !LOW);
-    for (let i = 0, k = 0; i < (LOW ? 160 : 300) && k < 5000; k++) {
-      const z = lerp(34, -315, rR()), x = spineAt(z).x + (rR() < 0.5 ? -1 : 1) * (6 + Math.pow(rR(), 1.4) * 100), y = hf(x, z), s = 0.7 + Math.pow(rR(), 2) * 3.5;
-      if (y > 58 || nearPlat(x, z, y + 2 * s)) continue;
+    for (let i = 0, k = 0; i < (LOW ? 180 : 340) && k < 6000; k++) {
+      const z = lerp(34, -480, rR()), x = spineAt(z).x + (rR() < 0.5 ? -1 : 1) * (6 + Math.pow(rR(), 1.4) * 100), y = hf(x, z), s = 0.7 + Math.pow(rR(), 2) * 3.5;
+      if (y > 65 || nearPlat(x, z, y + 2 * s)) continue;
       tmpC.setHSL(0.08, 0.06, 0.3 + rR() * 0.2); put(boulders, x, y + s * 0.3, z, s * 1.2, s * 0.8, s, rR() * 6.28, tmpC); i++;
     }
     for (const p of decoPlats) for (let i = 0; i < 3; i++) {
@@ -589,16 +678,15 @@ export function buildMountainWorld(THREE, scene, api = {}) {
     decoPlats.forEach((p, i) => { if (p.width >= 7) plinth(p.startX, p.startZ, p.startY - p.hh - 0.01, Math.min(p.width, p.depth) * 0.5 - 0.3, Math.min(p.width, p.depth) * 0.22);
       else put(bases, p.startX, p.startY - p.hh - 1.5 - (i % 3) * 0.5, p.startZ, p.width * 0.5, 3 + (i % 3), p.depth * 0.5, i); }); }
 
-  // --- Semak, rumput liar, bunga
-  { const rB = seeded(909), nBush = LOW ? 160 : 340;
+  { const rB = seeded(909), nBush = LOW ? 180 : 380;
     const bushes = inst(new THREE.IcosahedronGeometry(0.8, LOW ? 0 : 1), mat(0xffffff, { flatShading: true }), nBush, false);
-    for (let i = 0, k = 0; i < nBush && k < 7000; k++) {
-      const z = lerp(34, -315, rB()), x = spineAt(z).x + (rB() < 0.5 ? -1 : 1) * (6 + Math.pow(rB(), 1.3) * 80), y = hf(x, z), s = 0.5 + rB() * 0.9;
-      if (y > 28 || nearPlat(x, z, y + 1.2 * s)) continue;
+    for (let i = 0, k = 0; i < nBush && k < 8000; k++) {
+      const z = lerp(34, -480, rB()), x = spineAt(z).x + (rB() < 0.5 ? -1 : 1) * (6 + Math.pow(rB(), 1.3) * 80), y = hf(x, z), s = 0.5 + rB() * 0.9;
+      if (y > 30 || nearPlat(x, z, y + 1.2 * s)) continue;
       tmpC.setHSL(0.24 + rB() * 0.1, 0.5, 0.2 + rB() * 0.12); put(bushes, x, y + 0.3 * s, z, s * 1.3, s, s * 1.2, rB() * 6.28, tmpC); i++;
     }
-    const nTuft = LOW ? 320 : 650, tufts = inst(new THREE.ConeGeometry(0.09, 0.6, 4), mat(0xffffff), nTuft, false);
-    const flowers = inst(new THREE.IcosahedronGeometry(0.12, 0), mat(0xffffff, { roughness: 0.6 }), 150, false);
+    const nTuft = LOW ? 360 : 750, tufts = inst(new THREE.ConeGeometry(0.09, 0.6, 4), mat(0xffffff), nTuft, false);
+    const flowers = inst(new THREE.IcosahedronGeometry(0.12, 0), mat(0xffffff, { roughness: 0.6 }), 200, false);
     const fCols = [0xffffff, 0xffe14a, 0xe05fc0, 0xff8a3d];
     for (const p of grassPlats) {
       const nT = Math.min(Math.floor(p.width * p.depth * 0.6), 200), nF = Math.min(Math.floor(p.width * p.depth * 0.12), 40);
@@ -607,68 +695,18 @@ export function buildMountainWorld(THREE, scene, api = {}) {
       for (let i = 0; i < nF; i++) { tmpC.setHex(fCols[Math.floor(rB() * 4)]);
         put(flowers, p.startX + (rB() - 0.5) * (p.width - 1), top(p) + 0.45, p.startZ + (rB() - 0.5) * (p.depth - 1), 1, 1, 1, 0, tmpC); }
     }
-    for (let i = 0, k = 0; i < (LOW ? 120 : 260) && k < 4000; k++) {
-      const z = lerp(30, -180, rB()), x = spineAt(z).x + (rB() < 0.5 ? -1 : 1) * (8 + rB() * 35), y = hf(x, z);
+    for (let i = 0, k = 0; i < (LOW ? 120 : 260) && k < 5000; k++) {
+      const z = lerp(30, -250, rB()), x = spineAt(z).x + (rB() < 0.5 ? -1 : 1) * (8 + rB() * 35), y = hf(x, z);
       if (y > 24 || nearPlat(x, z, y + 1)) continue;
       tmpC.setHSL(0.2 + rB() * 0.1, 0.5, 0.25 + rB() * 0.15); const s = 1 + rB() * 1.4; put(tufts, x, y + 0.3 * s, z, s, s, s, 0, tmpC); i++;
     }
-    const caps = inst(new THREE.SphereGeometry(1.1, 10, 8), snowMat, 20, false);
-    for (let i = 0; i < 18; i++) { const a = (i / 18) * Math.PI * 2, s = 0.9 + (i % 3) * 0.3;
-      dummy.position.set(-10 + Math.cos(a) * 8.5, WINP.y + 0.15, -304 + Math.sin(a) * 8.5); dummy.scale.set(1.6 * s, 0.4 * s, 1.2 * s); dummy.rotation.set(0, a, 0); dummy.updateMatrix();
+    const caps = inst(new THREE.SphereGeometry(1.1, 10, 8), snowMat, 24, false);
+    for (let i = 0; i < 22; i++) { const a = (i / 22) * Math.PI * 2, s = 0.9 + (i % 3) * 0.3;
+      dummy.position.set(-10 + Math.cos(a) * 10.5, WINP.y + 0.15, -468 + Math.sin(a) * 10.5); dummy.scale.set(1.6 * s, 0.4 * s, 1.2 * s); dummy.rotation.set(0, a, 0); dummy.updateMatrix();
       caps.setMatrixAt(caps.userData.i++, dummy.matrix); caps.count = caps.userData.i; } }
 
-
   // ====================================================================
-  // HUJAN REAL-TIME — LineSegments ringan, diperbarui memakai delta time.
-  // ====================================================================
-  {
-    const rainCount = LOW ? 180 : 360;
-    const rainPositions = new Float32Array(rainCount * 6);
-    const rainData = [];
-    const rr = seeded(6127);
-    const rainGeo = new THREE.BufferGeometry();
-    for (let i = 0; i < rainCount; i++) {
-      const x = lerp(-42, 42, rr());
-      const y = 12 + rr() * 34;
-      const z = lerp(-330, 35, rr());
-      const len = 0.8 + rr() * 1.5;
-      rainData.push({ x, y, z, len, drift: 1.8 + rr() * 1.2 });
-      const k = i * 6;
-      rainPositions[k] = x; rainPositions[k+1] = y; rainPositions[k+2] = z;
-      rainPositions[k+3] = x - 0.12; rainPositions[k+4] = y - len; rainPositions[k+5] = z + 0.08;
-    }
-    rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
-    const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({
-      color: 0xc8e5f5, transparent: true, opacity: 0.42, depthWrite: false
-    }));
-    rain.frustumCulled = false;
-    grp.add(rain);
-    let previousTime = null;
-    anim.push(time => {
-      const dt = previousTime === null ? 0 : clamp(time - previousTime, 0, 0.05);
-      previousTime = time;
-      for (let i = 0; i < rainCount; i++) {
-        const d = rainData[i], k = i * 6;
-        d.y -= 24 * dt;
-        d.x += d.drift * dt;
-        if (d.y < -2) {
-          d.y = 35 + rr() * 12;
-          d.x = lerp(-42, 42, rr());
-          d.z = lerp(-330, 35, rr());
-        }
-        rainPositions[k] = d.x;
-        rainPositions[k+1] = d.y;
-        rainPositions[k+2] = d.z;
-        rainPositions[k+3] = d.x - 0.12;
-        rainPositions[k+4] = d.y - d.len;
-        rainPositions[k+5] = d.z + 0.08;
-      }
-      rainGeo.attributes.position.needsUpdate = true;
-    });
-  }
-
-  // ====================================================================
-  // ANIMASI AMBIENT
+  // ANIMASI AMBIENT (Termasuk Hujan)
   // ====================================================================
   hazards.push({ mesh: new THREE.Object3D(), update(t) { for (const f of anim) f(t); }, test() { return false; } });
 
