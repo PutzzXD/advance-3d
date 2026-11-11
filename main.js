@@ -3532,102 +3532,71 @@ function rollMap() { const available = ['lava']; if (snowWorld) available.push('
 // Animasi gacha horizontal: kartu map bergeser dari kanan ke kiri lalu berhenti tepat di hasil.
 function playMapGacha(result, spinMs, done) {
   let finished = false;
-  let settleTimer = null;
+  let fallbackTimer = null;
   const finish = () => {
     if (finished) return;
     finished = true;
-    if (settleTimer) clearTimeout(settleTimer);
-    try { done(); } catch (e) { console.error(e); }
+    if (fallbackTimer) clearTimeout(fallbackTimer);
+    try { if (typeof done === 'function') done(); } catch (e) { console.error(e); }
   };
 
   try {
-    const keys = [
-      'lava',
-      ...(snowWorld ? ['snow'] : []),
-      ...(angkasaWorld ? ['angkasa'] : []),
-      ...(mountainWorld ? ['mountain'] : [])
-    ];
+    // Hanya masukkan map yang sudah selesai dibuat/dimuat.
+    const keys = ['lava'];
+    if (snowWorld) keys.push('snow');
+    if (angkasaWorld) keys.push('angkasa');
+    if (mountainWorld) keys.push('mountain');
     const chosen = keys.includes(result) ? result : 'lava';
+    const winnerIndex = 30;
 
-    if (!document.getElementById('gacha-css')) {
-      const css = document.createElement('style');
+    // Perbarui CSS setiap kali agar tidak memakai style gacha versi lama.
+    let css = document.getElementById('gacha-css');
+    if (!css) {
+      css = document.createElement('style');
       css.id = 'gacha-css';
-      css.textContent = `
-        #map-gacha {
-          position:fixed; inset:0; z-index:10001; display:none;
-          flex-direction:column; align-items:center; justify-content:center;
-          gap:22px; padding:22px 14px; overflow:hidden;
-          background:
-            radial-gradient(ellipse at 50% 42%,rgba(27,91,145,.34),transparent 55%),
-            radial-gradient(circle at 50% 50%,#111d35 0%,#070b16 72%);
-          color:#fff; font-family:Arial,sans-serif; text-align:center;
-          isolation:isolate;
-        }
-        #map-gacha:before,#map-gacha:after {
-          content:""; position:absolute; width: min(78vw,520px); aspect-ratio:1;
-          border:1px solid rgba(75,190,255,.13); border-radius:50%;
-          box-shadow:0 0 50px rgba(0,174,255,.08),inset 0 0 50px rgba(0,174,255,.05);
-          z-index:-1; animation:gc-orbit 12s linear infinite;
-        }
-        #map-gacha:after { width:min(96vw,680px); animation-direction:reverse; opacity:.55; }
-        @keyframes gc-orbit { to { transform:rotate(360deg) scale(1.04); } }
-        #gc-title { font-size:clamp(23px,6vw,36px);font-weight:900;letter-spacing:3px;
-          text-shadow:0 0 22px #168cff; }
-        #gc-caption { color:#9eb8d8;font-size:12px;letter-spacing:2px;text-transform:uppercase; }
-        #gc-reel-wrap {
-          position:relative;width:min(94vw,760px);overflow:hidden;padding:18px 0;
-          border-top:1px solid rgba(103,190,255,.2);
-          border-bottom:1px solid rgba(103,190,255,.2);
-          background:linear-gradient(90deg,transparent,rgba(21,54,91,.35),transparent);
-          -webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
-          mask-image:linear-gradient(90deg,transparent,#000 7%,#000 93%,transparent);
-        }
-        #gc-reel-wrap:before {
-          content:"";position:absolute;z-index:4;left:50%;top:4px;bottom:4px;width:3px;
-          transform:translateX(-50%);border-radius:5px;background:#56d9ff;
-          box-shadow:0 0 10px #36cfff,0 0 24px #168cff;pointer-events:none;
-        }
-        #gc-reel { display:flex;align-items:stretch;gap:14px;width:max-content;
-          transform:translateX(0);will-change:transform; }
-        .gc-card {
-          flex:0 0 158px;height:174px;box-sizing:border-box;border:1px solid rgba(143,190,235,.25);
-          border-radius:17px;background:linear-gradient(155deg,rgba(35,56,86,.96),rgba(12,22,40,.98));
-          display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
-          opacity:.78;transform:scale(.91);transition:opacity .35s,transform .35s,border-color .35s,box-shadow .35s;
-        }
-        .gc-card-icon {font-size:54px;line-height:1;filter:drop-shadow(0 5px 12px rgba(0,0,0,.35));}
-        .gc-card-name {font-size:13px;font-weight:900;letter-spacing:1px;color:#e7f4ff;}
-        .gc-card-tag {font-size:9px;letter-spacing:2px;color:#83a8cf;}
-        .gc-card.winner {opacity:1;transform:scale(1.04);border:2px solid var(--map-color);
-          box-shadow:0 0 18px color-mix(in srgb,var(--map-color) 45%,transparent),inset 0 0 22px rgba(255,255,255,.06);}
-        #gc-result {min-height:48px;display:flex;flex-direction:column;gap:5px;align-items:center;}
-        #gc-result-name {font-size:clamp(18px,5vw,25px);font-weight:900;letter-spacing:1px;}
-        #gc-sub {font-size:13px;color:#a9bdd5;}
-        #gc-result.reveal {animation:gc-reveal .55s cubic-bezier(.2,1.5,.4,1) both;}
-        @keyframes gc-reveal {0%{opacity:0;transform:translateY(15px) scale(.75)}100%{opacity:1;transform:translateY(0) scale(1)}}
-        #gc-loading {width: min(220px,65vw);height:4px;border-radius:8px;background:#20344d;overflow:hidden;}
-        #gc-loading i {display:block;width:35%;height:100%;border-radius:8px;background:#51d8ff;
-          box-shadow:0 0 12px #51d8ff;animation:gc-progress .8s ease-in-out infinite alternate;}
-        @keyframes gc-progress {to{transform:translateX(190%)}}
-        @media(max-width:420px){.gc-card{flex-basis:140px;height:158px}.gc-card-icon{font-size:48px}#gc-reel{gap:11px}}
-        @media(prefers-reduced-motion:reduce){#map-gacha:before,#map-gacha:after,#gc-loading i{animation:none!important}}
-      `;
       document.head.appendChild(css);
     }
+    css.textContent = `
+      #map-gacha{position:fixed;inset:0;z-index:999999;display:none;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:20px 10px;box-sizing:border-box;overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#153b66 0%,#091629 48%,#030711 100%);color:#fff;font-family:Arial,sans-serif;text-align:center;isolation:isolate}
+      #map-gacha:before,#map-gacha:after{content:"";position:absolute;width:min(85vw,560px);aspect-ratio:1;border:1px solid #39baff22;border-radius:50%;box-shadow:0 0 65px #168cff18,inset 0 0 55px #168cff12;z-index:-1;animation:gc-orbit 16s linear infinite;pointer-events:none}
+      #map-gacha:after{width:min(115vw,760px);animation-direction:reverse;opacity:.55}
+      @keyframes gc-orbit{to{transform:rotate(360deg)}}
+      #gc-title{font-size:clamp(24px,6vw,38px);font-weight:1000;letter-spacing:3px;text-shadow:0 0 24px #159cff}
+      #gc-caption{font-size:11px;letter-spacing:2.5px;color:#9fc7ed}
+      #gc-reel-wrap{position:relative;width:min(94vw,760px);height:190px;box-sizing:border-box;overflow:hidden;padding:8px 0;border-top:1px solid #62c5ff55;border-bottom:1px solid #62c5ff55;background:linear-gradient(90deg,transparent,#173b61aa 18%,#173b61aa 82%,transparent);}
+      #gc-reel-wrap:before{content:"";position:absolute;z-index:5;left:50%;top:0;bottom:0;width:4px;transform:translateX(-50%);border-radius:6px;background:#63e5ff;box-shadow:0 0 10px #35cfff,0 0 26px #168cff;pointer-events:none}
+      #gc-reel{height:100%;display:flex;align-items:center;gap:14px;width:max-content;transform:translate3d(0,0,0);will-change:transform}
+      .gc-card{flex:0 0 150px;height:160px;box-sizing:border-box;border:1px solid #a6c9ed44;border-radius:16px;background:linear-gradient(155deg,#213b5c,#0b172a);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;opacity:.72;transform:scale(.88);transition:opacity .3s,transform .3s,border-color .3s,box-shadow .3s}
+      .gc-card-icon{font-size:49px;line-height:1}
+      .gc-card-name{font-size:12px;font-weight:900;letter-spacing:1px;color:#eaf6ff}
+      .gc-card-tag{font-size:9px;letter-spacing:2px;color:#91b8df}
+      .gc-card.winner{opacity:1;transform:scale(1.05);border:2px solid var(--map-color);box-shadow:0 0 22px var(--map-color),inset 0 0 20px #ffffff18}
+      #gc-result{min-height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}
+      #gc-result-name{font-size:clamp(19px,5vw,27px);font-weight:1000;letter-spacing:1px}
+      #gc-sub{font-size:12px;color:#a9c3df}
+      #gc-result.reveal{animation:gc-reveal .55s cubic-bezier(.2,1.5,.4,1) both}
+      @keyframes gc-reveal{from{opacity:0;transform:translateY(14px) scale(.75)}to{opacity:1;transform:translateY(0) scale(1)}}
+      #gc-loading{width:min(220px,65vw);height:4px;border-radius:9px;background:#1a3450;overflow:hidden}
+      #gc-loading i{display:block;width:35%;height:100%;background:#52dcff;box-shadow:0 0 12px #52dcff;animation:gc-progress .7s ease-in-out infinite alternate}
+      @keyframes gc-progress{to{transform:translateX(190%)}}
+      @media(max-width:430px){#gc-reel-wrap{height:174px}.gc-card{flex-basis:132px;height:146px}.gc-card-icon{font-size:43px}#gc-reel{gap:11px}}
+      @media(prefers-reduced-motion:reduce){#map-gacha:before,#map-gacha:after,#gc-loading i{animation:none!important}}
+    `;
 
     let el = document.getElementById('map-gacha');
     if (!el) {
       el = document.createElement('div');
       el.id = 'map-gacha';
-      el.innerHTML = `
-        <div id="gc-title">MAP ROULETTE</div>
-        <div id="gc-caption">PARKOUR 3D • RANDOM MAP SYSTEM</div>
-        <div id="gc-reel-wrap"><div id="gc-reel"></div></div>
-        <div id="gc-result"><div id="gc-result-name">MENENTUKAN MAP...</div><div id="gc-sub">Keberuntunganmu ditentukan sekarang</div></div>
-        <div id="gc-loading"><i></i></div>
-      `;
       document.body.appendChild(el);
     }
+    // Selalu bangun ulang isi overlay supaya sisa elemen versi lama tidak terbawa.
+    el.innerHTML = `
+      <div id="gc-title">MAP GACHA</div>
+      <div id="gc-caption">HORIZONTAL MAP ROULETTE</div>
+      <div id="gc-reel-wrap"><div id="gc-reel"></div></div>
+      <div id="gc-result"><div id="gc-result-name">MENGACAK MAP...</div><div id="gc-sub">Tunggu sampai roulette berhenti</div></div>
+      <div id="gc-loading"><i></i></div>
+    `;
 
     const reel = el.querySelector('#gc-reel');
     const wrap = el.querySelector('#gc-reel-wrap');
@@ -3635,64 +3604,68 @@ function playMapGacha(result, spinMs, done) {
     const resultName = el.querySelector('#gc-result-name');
     const sub = el.querySelector('#gc-sub');
     const loading = el.querySelector('#gc-loading');
-
     const cardHTML = (key, index) => {
-      const map = MAP_LABELS[key] || MAP_LABELS.lava;
-      return `<div class="gc-card" data-map="${key}" data-index="${index}" style="--map-color:${map.color}">
-        <div class="gc-card-icon">${map.icon}</div>
-        <div class="gc-card-name">${map.name}</div>
-        <div class="gc-card-tag">PARKOUR WORLD</div>
-      </div>`;
+      const m = MAP_LABELS[key] || MAP_LABELS.lava;
+      return `<div class="gc-card" data-map="${key}" data-index="${index}" style="--map-color:${m.color}"><div class="gc-card-icon">${m.icon}</div><div class="gc-card-name">${m.name}</div><div class="gc-card-tag">PARKOUR WORLD</div></div>`;
     };
 
-    // Hasil ditempatkan jauh di ujung agar reel terasa seperti roulette sungguhan.
-    const winnerIndex = 22;
-    const sequence = Array.from({length: winnerIndex + 1}, () => keys[Math.floor(Math.random() * keys.length)]);
+    // Buat deretan kartu panjang; kartu pemenang ditaruh jauh di kanan.
+    const sequence = Array.from({length:winnerIndex + 1}, () => keys[Math.floor(Math.random() * keys.length)]);
     sequence[winnerIndex] = chosen;
     reel.innerHTML = sequence.map(cardHTML).join('');
 
     el.style.display = 'flex';
+    el.style.opacity = '1';
+    el.style.transform = 'none';
     resultBox.classList.remove('reveal');
-    resultName.textContent = 'MENENTUKAN MAP...';
-    sub.textContent = 'Map sedang diacak...';
+    resultName.textContent = 'MENGACAK MAP...';
+    resultName.style.color = '#ffffff';
+    sub.textContent = 'Roulette sedang bergerak...';
     loading.style.display = 'block';
 
     const winner = reel.querySelector(`[data-index="${winnerIndex}"]`);
-    const duration = Math.max(2600, Number(spinMs) || 0);
-    const targetX = winner.offsetLeft + winner.offsetWidth / 2 - wrap.clientWidth / 2;
-
+    // Ukur setelah elemen tampil. Selisih bounding-rect lebih akurat daripada offsetLeft
+    // yang bisa berbeda tergantung offsetParent dan ukuran layar.
     reel.style.transition = 'none';
-    reel.style.transform = 'translate3d(0,0,0)';
-    // Paksa browser menghitung posisi awal sebelum menjalankan animasi.
+    reel.style.transform = 'translate3d(0px,0,0)';
     void reel.offsetWidth;
-
-    requestAnimationFrame(() => {
-      reel.style.transition = `transform ${duration}ms cubic-bezier(.08,.72,.12,1)`;
-      reel.style.transform = `translate3d(${-Math.max(0, targetX)}px,0,0)`;
-    });
-
-    settleTimer = setTimeout(() => {
-      const map = MAP_LABELS[chosen] || MAP_LABELS.lava;
+    const wrapRect = wrap.getBoundingClientRect();
+    const winnerRect = winner.getBoundingClientRect();
+    const targetX = (winnerRect.left + winnerRect.width / 2) - (wrapRect.left + wrapRect.width / 2);
+    const duration = Math.max(4200, Number(spinMs) || 0);
+    let revealed = false;
+    const revealWinner = () => {
+      if (revealed || finished) return;
+      revealed = true;
       winner.classList.add('winner');
       loading.style.display = 'none';
-      resultName.textContent = `${map.icon} ${map.name}`;
-      resultName.style.color = map.color;
+      const m = MAP_LABELS[chosen] || MAP_LABELS.lava;
+      resultName.textContent = `${m.icon} ${m.name}`;
+      resultName.style.color = m.color;
       sub.textContent = 'MAP BERHASIL DIDAPATKAN!';
       resultBox.classList.add('reveal');
-
-      settleTimer = setTimeout(() => {
-        el.style.transition = 'opacity .35s ease, transform .35s ease';
+      setTimeout(() => {
+        el.style.transition = 'opacity .3s ease';
         el.style.opacity = '0';
-        el.style.transform = 'scale(1.025)';
         setTimeout(() => {
           el.style.display = 'none';
           el.style.opacity = '1';
-          el.style.transform = 'scale(1)';
           el.style.transition = '';
           finish();
-        }, 380);
-      }, 950);
-    }, duration + 80);
+        }, 320);
+      }, 1000);
+    };
+
+    requestAnimationFrame(() => {
+      // Mulai dari posisi awal lalu geser horizontal hingga tepat di tengah marker.
+      reel.style.transition = `transform ${duration}ms cubic-bezier(.10,.72,.12,1)`;
+      reel.style.transform = `translate3d(${-targetX}px,0,0)`;
+    });
+    reel.addEventListener('transitionend', (event) => {
+      if (event.propertyName === 'transform') revealWinner();
+    }, {once:true});
+    // Fallback jika transitionend tidak terpanggil pada browser tertentu.
+    fallbackTimer = setTimeout(revealWinner, duration + 250);
   } catch (e) {
     console.warn('Animasi gacha map gagal:', e);
     finish();
